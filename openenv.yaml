@@ -1,0 +1,20 @@
+name: offline-navigator-env
+version: "1.0"
+description: >
+  An offline navigation environment where an AI agent finds
+  routes, gives turn-by-turn directions in multiple languages,
+  locates nearby POIs and triggers emergency SOS — all without internet.
+author: K Spoorthy
+tasks:
+  - name: easy
+    description: Find shortest route between two locations on offline map
+    difficulty: easy
+  - name: medium
+    description: Turn-by-turn directions in chosen language + nearest POIs
+    difficulty: medium
+  - name: hard
+    description: Full navigation with all languages, SOS alert, ETA and all POIs
+    difficulty: hard
+observation_space: Current location, destination, language preference, available map nodes
+action_space: Route list, language choice, SOS flag, POI request flag
+reward_range: [0.0, 1.0]
