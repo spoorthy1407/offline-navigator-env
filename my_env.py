@@ -32,6 +32,10 @@ class NavReward(BaseModel):
 LANGUAGES = ["English", "Hindi", "Telugu", "Tamil"]
 LOCATION_KEYS = list(LOCATIONS.keys())
 
+def clamp(value: float) -> float:
+    """Ensure score is strictly between 0 and 1 (not 0.0 and not 1.0)"""
+    return round(min(max(value, 0.01), 0.99), 2)
+
 class OfflineNavEnv:
     def __init__(self, task: str = "easy"):
         self.task = task
@@ -73,68 +77,77 @@ class OfflineNavEnv:
     async def step(self, action: NavAction) -> NavReward:
         self.current_step += 1
         self.done = True
-        reward = 0.0
+        reward = 0.01
         info = {"last_action_error": None, "instructions": [], "sos": None, "poi": None}
 
         if not self.correct_path:
             info["last_action_error"] = "No valid path exists"
-            return NavReward(reward=0.0, done=True, info=info)
+            return NavReward(reward=0.01, done=True, info=info)
 
         # ── Score 1: Route correctness ──
         predicted = action.route
         correct = self.correct_path
         if predicted == correct:
-            route_score = 1.0
+            route_score = 0.99
         else:
-            # Partial credit for correct start/end and overlapping nodes
             overlap = len(set(predicted) & set(correct))
-            route_score = round(overlap / len(correct), 2)
+            raw = overlap / len(correct) if len(correct) > 0 else 0
+            route_score = clamp(raw)
 
         # ── Score 2: Language instructions (medium + hard) ──
-        lang_score = 0.0
+        lang_score = 0.01
         if self.task in ["medium", "hard"]:
             if action.language in LANGUAGES:
                 instructions = []
                 for i in range(len(predicted) - 1):
                     curr = predicted[i]
                     nxt  = predicted[i + 1]
-                    # find distance between these two nodes
                     road = next((r for r in __import__('map_data').ROADS.get(curr, []) if r[0] == nxt), None)
                     dist = road[1] if road else "?"
                     if i == 0:
-                        instructions.append(get_instruction(action.language, "start", start=LOCATIONS[curr]["name"], next_stop=LOCATIONS[nxt]["name"]))
+                        instructions.append(get_instruction(
+                            action.language, "start",
+                            start=LOCATIONS[curr]["name"],
+                            next_stop=LOCATIONS[nxt]["name"]))
                     else:
-                        instructions.append(get_instruction(action.language, "turn", current=LOCATIONS[curr]["name"], next_stop=LOCATIONS[nxt]["name"], dist=dist))
-                instructions.append(get_instruction(action.language, "arrive",
+                        instructions.append(get_instruction(
+                            action.language, "turn",
+                            current=LOCATIONS[curr]["name"],
+                            next_stop=LOCATIONS[nxt]["name"],
+                            dist=dist))
+                instructions.append(get_instruction(
+                    action.language, "arrive",
                     destination=LOCATIONS[self.end]["name"],
                     total_dist=self.correct_dist,
                     eta=self.correct_eta))
                 info["instructions"] = instructions
-                lang_score = 1.0
+                lang_score = 0.99
 
         # ── Score 3: POI (medium + hard) ──
-        poi_score = 0.0
+        poi_score = 0.01
         if self.task in ["medium", "hard"] and action.poi_request:
             poi = get_nearest_poi(self.end)
             info["poi"] = poi
-            poi_score = 1.0 if poi else 0.0
+            poi_score = 0.99 if poi else 0.01
 
         # ── Score 4: SOS (hard only) ──
-        sos_score = 0.0
+        sos_score = 0.01
         if self.task == "hard" and action.sos_triggered:
             sos = get_sos_info(self.end)
             info["sos"] = sos
-            sos_score = 1.0
+            sos_score = 0.99
 
         # ── Final reward calculation ──
         if self.task == "easy":
-            reward = route_score
+            reward = clamp(route_score)
 
         elif self.task == "medium":
-            reward = round((route_score * 0.5) + (lang_score * 0.3) + (poi_score * 0.2), 2)
+            raw = (route_score * 0.5) + (lang_score * 0.3) + (poi_score * 0.2)
+            reward = clamp(raw)
 
         elif self.task == "hard":
-            reward = round((route_score * 0.4) + (lang_score * 0.3) + (poi_score * 0.2) + (sos_score * 0.1), 2)
+            raw = (route_score * 0.4) + (lang_score * 0.3) + (poi_score * 0.2) + (sos_score * 0.1)
+            reward = clamp(raw)
 
         return NavReward(reward=reward, done=self.done, info=info)
 
